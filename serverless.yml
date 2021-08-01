@@ -1,0 +1,132 @@
+service: trabajofinal
+
+
+provider:
+  name: aws
+  region: "eu-west-3"
+  runtime: python3.8
+  environment:
+    DYNAMODB_TABLE: ${self:service}-${opt:stage, self:provider.stage}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+      Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}"
+
+functions:
+  create:
+    handler: funciones/create.create
+    events:
+      - http:
+          path: funciones
+          method: post
+          authorizer:
+           type: COGNITO_USER_POOLS
+           authorizerId:
+             Ref: ApiGatewayAuthorizer
+          cors: true
+
+  list:
+    handler: funciones/list.list
+    events:
+      - http:
+          path: funciones
+          method: get
+          authorizer:
+           type: COGNITO_USER_POOLS
+           authorizerId:
+             Ref: ApiGatewayAuthorizer
+          cors: true
+
+  get:
+    handler: funciones/get.get
+    events:
+      - http:
+          path: funciones/{id}
+          method: get
+          authorizer:
+           type: COGNITO_USER_POOLS
+           authorizerId:
+             Ref: ApiGatewayAuthorizer
+          cors: true
+
+  update:
+    handler: funciones/update.update
+    events:
+      - http:
+          path: funciones/{id}
+          method: put
+          authorizer:
+           type: COGNITO_USER_POOLS
+           authorizerId:
+             Ref: ApiGatewayAuthorizer
+          cors: true
+
+  delete:
+    handler: funciones/delete.delete
+    events:
+      - http:
+          path: funciones/{id}
+          method: delete
+          authorizer:
+           type: COGNITO_USER_POOLS
+           authorizerId:
+             Ref: ApiGatewayAuthorizer
+          cors: true
+
+resources:
+  Resources:
+    FuncionesDynamoDbTable:
+      Type: 'AWS::DynamoDB::Table'
+      DeletionPolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: id
+            AttributeType: S
+        KeySchema:
+          -
+            AttributeName: id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}
+    CognitoUserPool:
+      Type: "AWS::Cognito::UserPool"
+      Properties:
+        MfaConfiguration: OFF
+        UserPoolName: my-user-pool
+        UsernameAttributes:
+         - email
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 6
+            RequireLowercase: False
+            RequireNumbers: True
+            RequireSymbols: False
+            RequireUppercase: True
+    CognitoUserPoolClient:
+      Type: "AWS::Cognito::UserPoolClient"
+      Properties:
+        ClientName: my-user-pool-client
+        GenerateSecret: False
+        UserPoolId:
+          Ref: CognitoUserPool
+    ApiGatewayAuthorizer:
+      DependsOn:
+        - ApiGatewayRestApi
+      Type: AWS::ApiGateway::Authorizer
+      Properties:
+       Name: cognito-authorizer
+       IdentitySource: method.request.header.Authorization
+       RestApiId:
+        Ref: ApiGatewayRestApi
+       Type: COGNITO_USER_POOLS
+       ProviderARNs:
+          - Fn::GetAtt: [CognitoUserPool, Arn]
